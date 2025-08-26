@@ -5,40 +5,93 @@ import { FishGame } from './FishGame';
 
 const Container = styled.div`
   display: flex;
+  flex-direction: column;
   gap: 20px;
   padding: 20px;
-  flex-wrap: wrap;
-  justify-content: center;
+  max-width: 1400px;
+  margin: 0 auto;
+  
+  @media (min-width: 1024px) {
+    flex-direction: row;
+    align-items: flex-start;
+  }
 `;
 
-const Section = styled.div`
+const MainSection = styled.div`
   display: flex;
+  flex-direction: column;
   gap: 20px;
+  width: 100%;
+  
+  @media (min-width: 768px) {
+    flex-direction: row;
+  }
 `;
 
 const VideoContainer = styled.div`
   position: relative;
-  min-width: 640px;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  
+  &:before {
+    content: "";
+    display: block;
+    padding-top: 100%;
+  }
+  
+  @media (min-width: 768px) {
+    margin: 0;
+  }
+`;
+
+const VideoWrapper = styled.div`
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 `;
 
 const Video = styled.video`
-  width: 640px;
-  height: 480px;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 `;
 
 const Canvas = styled.canvas`
   position: absolute;
   top: 0;
   left: 0;
+  width: 100%;
+  height: 100%;
 `;
 
 const MetricsPanel = styled.div`
+  display: none;
   background: #f5f5f5;
   padding: 20px;
   border-radius: 8px;
-  min-width: 300px;
+  width: 300px;
   height: 480px;
   overflow-y: auto;
+  
+  @media (min-width: 768px) {
+    display: block;
+  }
+`;
+
+const GameSection = styled.div`
+  width: 100%;
+  max-width: 480px;
+  height: 480px;
+  margin: 0 auto;
+  
+  @media (min-width: 1024px) {
+    width: 400px;
+    margin: 0;
+  }
 `;
 
 const MetricItem = styled.div`
@@ -115,7 +168,13 @@ export const FaceDetection = () => {
 
   const startVideo = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: {
+          width: { ideal: 640 },
+          height: { ideal: 640 },
+          facingMode: 'user'
+        } 
+      });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
@@ -174,25 +233,64 @@ export const FaceDetection = () => {
       if (!canvasRef.current) return;
 
       const canvas = canvasRef.current;
-      const displaySize = { width: video.width, height: video.height };
-      faceapi.matchDimensions(canvas, displaySize);
+      
+      const updateCanvasSize = () => {
+        const displaySize = {
+          width: canvas.clientWidth,
+          height: canvas.clientHeight
+        };
+        canvas.width = displaySize.width;
+        canvas.height = displaySize.height;
+        faceapi.matchDimensions(canvas, displaySize);
+        return displaySize;
+      };
 
-      setInterval(async () => {
+      // Initial size setup
+      let displaySize = updateCanvasSize();
+
+      // Update size on resize
+      const resizeObserver = new ResizeObserver(() => {
+        displaySize = updateCanvasSize();
+      });
+      resizeObserver.observe(canvas);
+
+      const detectFace = async () => {
+        if (!video.videoWidth || !video.videoHeight) return;
+
+        // Get the actual video dimensions
+        const videoSize = {
+          width: video.videoWidth,
+          height: video.videoHeight
+        };
+
+        // Calculate scaling factors
+        const scaleX = displaySize.width / videoSize.width;
+        const scaleY = displaySize.height / videoSize.height;
+
         const detections = await faceapi
           .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
           .withFaceLandmarks()
           .withFaceExpressions();
 
         if (detections) {
-          const resizedDetections = faceapi.resizeResults(detections, displaySize);
+          // Clear previous drawings
           canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
-          
+
+          // Scale detection results to match display size
+          const resizedDetections = faceapi.resizeResults(detections, {
+            width: displaySize.width,
+            height: displaySize.height
+          });
+
+          // Draw the detections
           faceapi.draw.drawDetections(canvas, resizedDetections);
           faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
 
+          // Calculate metrics using the scaled landmarks
           const mouthMetrics = calculateMouthMetrics(resizedDetections.landmarks);
           const expression = determineExpression(resizedDetections.expressions);
 
+          // Update metrics state
           setMetrics({
             verticalMouthOpening: {
               pixels: Math.round(mouthMetrics.verticalOpening.pixels),
@@ -206,20 +304,33 @@ export const FaceDetection = () => {
               pixels: Math.round(mouthMetrics.mouthArea.pixels),
               cm: Number(mouthMetrics.mouthArea.cm.toFixed(1))
             },
-            eyeDistance: mouthMetrics.eyeDistance,
+            eyeDistance: {
+              pixels: Math.round(mouthMetrics.eyeDistance.pixels * scaleX),
+              cm: AVERAGE_EYE_DISTANCE_CM
+            },
             expression
           });
         }
-      }, 100);
+
+        requestAnimationFrame(detectFace);
+      };
+
+      detectFace();
+
+      return () => {
+        resizeObserver.disconnect();
+      };
     });
   }, []);
 
   return (
     <Container>
-      <Section>
+      <MainSection>
         <VideoContainer>
-          <Video ref={videoRef} autoPlay muted width={640} height={480} />
-          <Canvas ref={canvasRef} />
+          <VideoWrapper>
+            <Video ref={videoRef} autoPlay muted playsInline />
+            <Canvas ref={canvasRef} />
+          </VideoWrapper>
         </VideoContainer>
         <MetricsPanel>
           <MetricItem>
@@ -245,8 +356,10 @@ export const FaceDetection = () => {
             <MetricValue>{metrics.expression}</MetricValue>
           </MetricItem>
         </MetricsPanel>
-      </Section>
-      <FishGame mouthOpenness={metrics.verticalMouthOpening.cm} />
+      </MainSection>
+      <GameSection>
+        <FishGame mouthOpenness={metrics.verticalMouthOpening.cm} />
+      </GameSection>
     </Container>
   );
 }; 

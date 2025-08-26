@@ -3,11 +3,31 @@ import styled from '@emotion/styled';
 
 const GameContainer = styled.div`
   position: relative;
-  width: 400px;
+  width: 100%;
   height: 480px;
   background: #e3f2fd;
   border-radius: 8px;
   overflow: hidden;
+  
+  &:before {
+    content: "";
+    display: block;
+    padding-top: 120%;
+  }
+  
+  @media (min-width: 1024px) {
+    &:before {
+      padding-top: 120%;
+    }
+  }
+`;
+
+const GameWrapper = styled.div`
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
 `;
 
 const GameCanvas = styled.canvas`
@@ -124,8 +144,20 @@ export const FishGame: React.FC<GameProps> = ({ mouthOpenness }) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    canvas.width = 400;
-    canvas.height = 480;
+    // Set canvas size based on container size
+    const updateCanvasSize = () => {
+      const container = canvas.parentElement;
+      if (container) {
+        canvas.width = container.clientWidth;
+        canvas.height = container.clientHeight;
+      }
+    };
+
+    // Initial size setup
+    updateCanvasSize();
+
+    // Update size on window resize
+    window.addEventListener('resize', updateCanvasSize);
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -321,18 +353,21 @@ export const FishGame: React.FC<GameProps> = ({ mouthOpenness }) => {
 
     return () => {
       cancelAnimationFrame(animationFrameId);
+      window.removeEventListener('resize', updateCanvasSize);
     };
   }, [mouthOpenness]);
 
   return (
     <GameContainer>
-      <GameCanvas ref={canvasRef} />
-      <Score>Score: {score}</Score>
-      <GameOverlay visible={gameOver}>
-        <h2>Game Over!</h2>
-        <p>Final Score: {score}</p>
-        <RestartButton onClick={resetGame}>Play Again</RestartButton>
-      </GameOverlay>
+      <GameWrapper>
+        <GameCanvas ref={canvasRef} />
+        <Score>Score: {score}</Score>
+        <GameOverlay visible={gameOver}>
+          <h2>Game Over!</h2>
+          <p>Final Score: {score}</p>
+          <RestartButton onClick={resetGame}>Play Again</RestartButton>
+        </GameOverlay>
+      </GameWrapper>
     </GameContainer>
   );
 }; 

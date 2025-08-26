@@ -14,11 +14,21 @@ const Header = styled.header`
   margin-bottom: 20px;
 `;
 
+const Instructions = styled.p`
+  color: #666;
+  font-size: 0.9rem;
+  margin-top: 10px;
+  margin-bottom: 0;
+`;
+
 function App() {
   return (
     <AppContainer>
       <Header>
         <h1>Face Metrics</h1>
+        <Instructions>
+          🐠 Abra a boca para fazer o peixe subir e feche para fazê-lo afundar!
+        </Instructions>
       </Header>
       <FaceDetection />
     </AppContainer>
