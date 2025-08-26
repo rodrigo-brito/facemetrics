@@ -71,7 +71,7 @@ interface GameProps {
 }
 
 // Threshold for mouth openness to make the fish swim up
-const MOUTH_THRESHOLD = 30;
+const MOUTH_THRESHOLD = 1;
 // Minimum time between bubbles in milliseconds (3 seconds)
 const BUBBLE_INTERVAL = 3000;
 // Maximum number of bubbles allowed on screen at once

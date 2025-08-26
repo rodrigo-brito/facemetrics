@@ -8,9 +8,6 @@ yarn-error.log
 .git
 .gitignore
 
-# Build output
-dist
-
 # Environment files
 .env
 .env.local

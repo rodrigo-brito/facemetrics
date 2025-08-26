@@ -223,9 +223,7 @@ export const FaceDetection = () => {
         </VideoContainer>
         <MetricsPanel>
           <MetricItem>
-            <h3>Calibration Reference</h3>
             <MetricValue>Eye Distance: {metrics.eyeDistance.pixels.toFixed(1)} px</MetricValue>
-            <MetricSubValue>≈ {metrics.eyeDistance.cm.toFixed(1)} cm (standard)</MetricSubValue>
           </MetricItem>
           <MetricItem>
             <h3>Vertical Mouth Opening</h3>
@@ -248,7 +246,7 @@ export const FaceDetection = () => {
           </MetricItem>
         </MetricsPanel>
       </Section>
-      <FishGame mouthOpenness={metrics.verticalMouthOpening.pixels} />
+      <FishGame mouthOpenness={metrics.verticalMouthOpening.cm} />
     </Container>
   );
 }; 
