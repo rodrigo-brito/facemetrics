@@ -74,12 +74,35 @@ const Lives = styled.div`
   font-size: 1.2em;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 2px;
 `;
 
-const Heart = styled.span<{ filled: boolean }>`
-  color: ${props => props.filled ? '#ff4757' : '#ddd'};
+const HeartContainer = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 2px;
+`;
+
+const Heart = styled.span<{ type: 'full' | 'half' | 'empty' }>`
+  color: ${props => {
+    switch (props.type) {
+      case 'full': return '#ff4757';
+      case 'half': return '#ff4757';
+      case 'empty': return '#ddd';
+    }
+  }};
   font-size: 1.3em;
+  position: relative;
+  
+  ${props => props.type === 'half' && `
+    &::after {
+      content: '♡';
+      position: absolute;
+      left: 0;
+      color: #ddd;
+      clip-path: inset(0 50% 0 0);
+    }
+  `}
 `;
 
 const AudioControls = styled.div`
@@ -139,8 +162,8 @@ const MOUTH_THRESHOLD = 1;
 const BUBBLE_INTERVAL = 3000;
 // Maximum number of bubbles allowed on screen at once
 const MAX_BUBBLES = 3;
-// Number of lives the fish starts with
-const MAX_LIVES = 3;
+// Number of lives the fish starts with (in half-hearts)
+const MAX_LIVES = 6; // 3 full hearts = 6 half hearts
 
 export const FishGame: React.FC<GameProps> = ({ mouthOpenness }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -283,6 +306,26 @@ export const FishGame: React.FC<GameProps> = ({ mouthOpenness }) => {
       (lifeLostRef.current as any).play();
     }
   }, [sfxEnabled]);
+  
+  // Helper function to render hearts based on remaining lives
+  const renderHearts = () => {
+    const hearts = [];
+    const fullHearts = Math.floor(lives / 2);
+    const hasHalfHeart = lives % 2 === 1;
+    const totalHeartSlots = MAX_LIVES / 2; // 3 heart slots
+    
+    for (let i = 0; i < totalHeartSlots; i++) {
+      if (i < fullHearts) {
+        hearts.push(<Heart key={i} type="full">♥</Heart>);
+      } else if (i === fullHearts && hasHalfHeart) {
+        hearts.push(<Heart key={i} type="half">♥</Heart>);
+      } else {
+        hearts.push(<Heart key={i} type="empty">♡</Heart>);
+      }
+    }
+    
+    return hearts;
+  };
   const gameStateRef = useRef({
     fish: {
       x: 50,
@@ -514,7 +557,7 @@ export const FishGame: React.FC<GameProps> = ({ mouthOpenness }) => {
 
         // Remove bubbles that go off screen
         if (bubble.x + bubble.width < 0) {
-          gameStateRef.current.lives -= 1;
+          gameStateRef.current.lives -= 1; // Lose half a heart (1 half-heart unit)
           setLives(gameStateRef.current.lives);
           playLifeLost();
           
@@ -555,9 +598,10 @@ export const FishGame: React.FC<GameProps> = ({ mouthOpenness }) => {
       <GameWrapper>
         <GameCanvas ref={canvasRef} />
         <Lives>
-          Lives: {Array.from({ length: MAX_LIVES }, (_, i) => (
-            <Heart key={i} filled={i < lives}>♥</Heart>
-          ))}
+          Lives: 
+          <HeartContainer>
+            {renderHearts()}
+          </HeartContainer>
         </Lives>
         <Score>Score: {score}</Score>
         <AudioControls>
