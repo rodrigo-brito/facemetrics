@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import styled from '@emotion/styled';
 
 const GameContainer = styled.div`
@@ -63,6 +63,49 @@ const Score = styled.div`
   font-size: 1.2em;
 `;
 
+const Lives = styled.div`
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 1.2em;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+`;
+
+const Heart = styled.span<{ filled: boolean }>`
+  color: ${props => props.filled ? '#ff4757' : '#ddd'};
+  font-size: 1.3em;
+`;
+
+const AudioControls = styled.div`
+  position: absolute;
+  top: 50px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+`;
+
+const AudioButton = styled.button<{ active: boolean }>`
+  background: ${props => props.active ? 'rgba(76, 175, 80, 0.8)' : 'rgba(0, 0, 0, 0.5)'};
+  color: white;
+  border: none;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 1.1em;
+  cursor: pointer;
+  transition: background 0.3s;
+  
+  &:hover {
+    background: ${props => props.active ? 'rgba(76, 175, 80, 1)' : 'rgba(0, 0, 0, 0.7)'};
+  }
+`;
+
 const RestartButton = styled.button`
   background: #4CAF50;
   color: white;
@@ -96,14 +139,150 @@ const MOUTH_THRESHOLD = 1;
 const BUBBLE_INTERVAL = 3000;
 // Maximum number of bubbles allowed on screen at once
 const MAX_BUBBLES = 3;
+// Number of lives the fish starts with
+const MAX_LIVES = 3;
 
 export const FishGame: React.FC<GameProps> = ({ mouthOpenness }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [gameOver, setGameOver] = useState(false);
   const [score, setScore] = useState(0);
-  const [missedBubbles, setMissedBubbles] = useState(0);
+  const [lives, setLives] = useState(MAX_LIVES);
+  const [musicEnabled, setMusicEnabled] = useState(false);
+  const [sfxEnabled, setSfxEnabled] = useState(true);
   
-  // Game state ref to avoid closure issues in animation loop
+  // Audio refs
+  const backgroundMusicRef = useRef<HTMLAudioElement | null>(null);
+  const bubbleCollectRef = useRef<HTMLAudioElement | null>(null);
+  const gameOverSoundRef = useRef<HTMLAudioElement | null>(null);
+  const lifeLostRef = useRef<HTMLAudioElement | null>(null);
+  
+  // Initialize audio
+  useEffect(() => {
+    // Create audio elements using Web Audio API with synthesized sounds
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    
+    // Background music - simple ambient tone
+    const createBackgroundMusic = () => {
+      const audio = new Audio();
+      // Create a data URL for a simple ambient sound
+      const sampleRate = 44100;
+      const duration = 4; // 4 seconds loop
+      const samples = sampleRate * duration;
+      const buffer = new ArrayBuffer(44 + samples * 2);
+      const view = new DataView(buffer);
+      
+      // WAV header
+      const writeString = (offset: number, string: string) => {
+        for (let i = 0; i < string.length; i++) {
+          view.setUint8(offset + i, string.charCodeAt(i));
+        }
+      };
+      
+      writeString(0, 'RIFF');
+      view.setUint32(4, 36 + samples * 2, true);
+      writeString(8, 'WAVE');
+      writeString(12, 'fmt ');
+      view.setUint32(16, 16, true); // PCM format
+      view.setUint16(20, 1, true); // PCM
+      view.setUint16(22, 1, true); // Mono
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      writeString(36, 'data');
+      view.setUint32(40, samples * 2, true);
+      
+      // Generate ambient underwater sound
+      for (let i = 0; i < samples; i++) {
+        const t = i / sampleRate;
+        const wave1 = Math.sin(2 * Math.PI * 220 * t) * 0.1; // Low frequency
+        const wave2 = Math.sin(2 * Math.PI * 110 * t) * 0.05; // Even lower
+        const noise = (Math.random() - 0.5) * 0.02; // Gentle noise
+        const envelope = Math.sin(2 * Math.PI * t / duration) * 0.5 + 0.5; // Fade in/out
+        const sample = (wave1 + wave2 + noise) * envelope;
+        view.setInt16(44 + i * 2, sample * 0x7FFF, true);
+      }
+      
+      const blob = new Blob([buffer], { type: 'audio/wav' });
+      audio.src = URL.createObjectURL(blob);
+      audio.loop = true;
+      audio.volume = 0.3;
+      return audio;
+    };
+    
+    // Sound effects using oscillators
+    const createSoundEffect = (frequency: number, duration: number, type: OscillatorType = 'sine') => {
+      return () => {
+        if (!sfxEnabled) return;
+        
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+        oscillator.type = type;
+        
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+        
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + duration);
+      };
+    };
+    
+    backgroundMusicRef.current = createBackgroundMusic();
+    bubbleCollectRef.current = { play: createSoundEffect(800, 0.2) } as any;
+    gameOverSoundRef.current = { play: createSoundEffect(200, 1, 'sawtooth') } as any;
+    lifeLostRef.current = { play: createSoundEffect(300, 0.5, 'square') } as any;
+    
+    return () => {
+      if (backgroundMusicRef.current) {
+        backgroundMusicRef.current.pause();
+        URL.revokeObjectURL(backgroundMusicRef.current.src);
+      }
+    };
+  }, [sfxEnabled]);
+  
+  // Handle music toggle
+  const toggleMusic = useCallback(() => {
+    if (backgroundMusicRef.current) {
+      if (musicEnabled) {
+        backgroundMusicRef.current.pause();
+      } else {
+        backgroundMusicRef.current.play().catch(console.log);
+      }
+    }
+    setMusicEnabled(!musicEnabled);
+  }, [musicEnabled]);
+  
+  // Handle SFX toggle
+  const toggleSFX = useCallback(() => {
+    setSfxEnabled(!sfxEnabled);
+  }, [sfxEnabled]);
+  
+  // Play sound effects
+  const playBubbleCollect = useCallback(() => {
+    if (bubbleCollectRef.current && sfxEnabled) {
+      (bubbleCollectRef.current as any).play();
+    }
+  }, [sfxEnabled]);
+  
+  const playGameOver = useCallback(() => {
+    if (gameOverSoundRef.current && sfxEnabled) {
+      (gameOverSoundRef.current as any).play();
+    }
+    if (backgroundMusicRef.current) {
+      backgroundMusicRef.current.pause();
+    }
+  }, [sfxEnabled]);
+  
+  const playLifeLost = useCallback(() => {
+    if (lifeLostRef.current && sfxEnabled) {
+      (lifeLostRef.current as any).play();
+    }
+  }, [sfxEnabled]);
   const gameStateRef = useRef({
     fish: {
       x: 50,
@@ -115,7 +294,7 @@ export const FishGame: React.FC<GameProps> = ({ mouthOpenness }) => {
     },
     bubbles: [] as GameObject[],
     score: 0,
-    missedBubbles: 0,
+    lives: MAX_LIVES,
     gameOver: false,
   });
 
@@ -131,12 +310,18 @@ export const FishGame: React.FC<GameProps> = ({ mouthOpenness }) => {
       },
       bubbles: [],
       score: 0,
-      missedBubbles: 0,
+      lives: MAX_LIVES,
       gameOver: false,
     };
     setScore(0);
-    setMissedBubbles(0);
+    setLives(MAX_LIVES);
     setGameOver(false);
+    
+    // Restart background music if enabled
+    if (musicEnabled && backgroundMusicRef.current) {
+      backgroundMusicRef.current.currentTime = 0;
+      backgroundMusicRef.current.play().catch(console.log);
+    }
   };
 
   // Initialize game
@@ -323,17 +508,20 @@ export const FishGame: React.FC<GameProps> = ({ mouthOpenness }) => {
         ) {
           gameStateRef.current.score += 1;
           setScore(gameStateRef.current.score);
+          playBubbleCollect();
           return false;
         }
 
         // Remove bubbles that go off screen
         if (bubble.x + bubble.width < 0) {
-          gameStateRef.current.missedBubbles += 1;
-          setMissedBubbles(gameStateRef.current.missedBubbles);
+          gameStateRef.current.lives -= 1;
+          setLives(gameStateRef.current.lives);
+          playLifeLost();
           
-          if (gameStateRef.current.missedBubbles >= 5) {
+          if (gameStateRef.current.lives <= 0) {
             gameStateRef.current.gameOver = true;
             setGameOver(true);
+            playGameOver();
             return false;
           }
           return false;
@@ -354,14 +542,32 @@ export const FishGame: React.FC<GameProps> = ({ mouthOpenness }) => {
     return () => {
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', updateCanvasSize);
+      
+      // Stop all audio when component unmounts
+      if (backgroundMusicRef.current) {
+        backgroundMusicRef.current.pause();
+      }
     };
-  }, [mouthOpenness]);
+  }, [mouthOpenness, playBubbleCollect, playLifeLost, playGameOver]);
 
   return (
     <GameContainer>
       <GameWrapper>
         <GameCanvas ref={canvasRef} />
+        <Lives>
+          Lives: {Array.from({ length: MAX_LIVES }, (_, i) => (
+            <Heart key={i} filled={i < lives}>♥</Heart>
+          ))}
+        </Lives>
         <Score>Score: {score}</Score>
+        <AudioControls>
+          <AudioButton active={musicEnabled} onClick={toggleMusic}>
+            {musicEnabled ? '🎵' : '🔇'}
+          </AudioButton>
+          <AudioButton active={sfxEnabled} onClick={toggleSFX}>
+            {sfxEnabled ? '🔊' : '🔇'}
+          </AudioButton>
+        </AudioControls>
         <GameOverlay visible={gameOver}>
           <h2>Game Over!</h2>
           <p>Final Score: {score}</p>
