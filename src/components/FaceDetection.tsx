@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import * as faceapi from 'face-api.js';
 import styled from '@emotion/styled';
 import { FishGame } from './FishGame';
+import { FlappyBird } from './FlappyBird';
+import { AirplaneGame } from './AirplaneGame';
 
 const Container = styled.div`
   display: flex;
@@ -134,10 +136,14 @@ interface FaceMetrics {
   expression: string;
 }
 
+interface FaceDetectionProps {
+  selectedGame: 'fish' | 'bird' | 'airplane';
+}
+
 // Average interpupillary distance (IPD) in centimeters
 const AVERAGE_EYE_DISTANCE_CM = 6.3;
 
-export const FaceDetection = () => {
+export const FaceDetection = ({ selectedGame }: FaceDetectionProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [metrics, setMetrics] = useState<FaceMetrics>({
@@ -358,7 +364,15 @@ export const FaceDetection = () => {
         </MetricsPanel>
       </MainSection>
       <GameSection>
-        <FishGame mouthOpenness={metrics.verticalMouthOpening.cm} />
+        {selectedGame === 'fish' && (
+          <FishGame mouthOpenness={metrics.verticalMouthOpening.cm} />
+        )}
+        {selectedGame === 'bird' && (
+          <FlappyBird mouthOpenness={metrics.verticalMouthOpening.cm} />
+        )}
+        {selectedGame === 'airplane' && (
+          <AirplaneGame mouthOpenness={metrics.verticalMouthOpening.cm} />
+        )}
       </GameSection>
     </Container>
   );
